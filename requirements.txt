@@ -1,0 +1,7 @@
+streamlit
+pdfplumber
+python-docx
+google-generativeai
+sentence-transformers
+chromadb
+openpyxl
