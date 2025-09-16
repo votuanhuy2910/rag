@@ -17,6 +17,8 @@ import csv
 # Dùng st.secrets để quản lý khóa API một cách an toàn hơn
 # st.secrets['GEMINI_API_KEY']
 GEMINI_API_KEY = "AIzaSyCSenmJGRf2VJ9WId1SwQpfL3dMRRaHWmw"
+# GEMINI_API_KEY = "AIzaSyABwa4KRue_M2A7l2YHAN4J2tPQJ5s33Ig"
+# GEMINI_API_KEY = "AIzaSyBGSw2-NoZXd3HT_jWK1HoNzX7WhHcaBNA"
 genai.configure(api_key=GEMINI_API_KEY)
 
 # Sử dụng caching cho các tài nguyên nặng
@@ -29,8 +31,8 @@ def get_chroma_client():
     return chromadb.Client()
 
 @st.cache_resource
-def get_chroma_collection(client):
-    return client.get_or_create_collection("essays")
+def get_chroma_collection(_client):
+    return _client.get_or_create_collection("essays")
 
 embedding_model = load_embedding_model()
 chroma_client = get_chroma_client()
@@ -96,6 +98,7 @@ def export_collection_to_csv(collection, file_path="essays_backup.csv"):
                 metadata.get("basename", "")
             ])
 
+# Sửa đổi hàm load_sample_data
 def load_sample_data():
     base_folder = "data"
     docs, ids, metadatas = [], [], []
@@ -108,6 +111,7 @@ def load_sample_data():
         if not os.path.isdir(course_path):
             continue
 
+        # Duyệt qua tất cả các thư mục con trong mỗi môn học
         for category in ["essays", "scores", "teaching_materials"]:
             folder_path = os.path.join(course_path, category)
             if not os.path.exists(folder_path):
@@ -116,7 +120,8 @@ def load_sample_data():
             for idx, filename in enumerate(os.listdir(folder_path)):
                 path = os.path.join(folder_path, filename)
                 text = ""
-
+                
+                # Đọc nội dung file dựa trên đuôi file
                 if filename.endswith(".txt"):
                     with open(path, "r", encoding="utf-8") as f:
                         text = f.read()
@@ -135,13 +140,30 @@ def load_sample_data():
                 if text.strip():
                     basename = os.path.splitext(filename)[0]
                     docs.append(text)
-                    ids.append(f"{course}_{category}_{idx}")
-                    metadatas.append({
+                    
+                    # Tạo ID duy nhất cho mỗi tài liệu để tránh trùng lặp
+                    doc_id = f"{course}_{category}_{basename}"
+                    ids.append(doc_id)
+                    
+                    # Tạo metadata cho tất cả các file
+                    metadata = {
                         "course": course,
                         "category": category,
                         "filename": filename,
                         "basename": basename
-                    })
+                    }
+
+                    # Logic thêm điểm mẫu (chỉ áp dụng cho các file trong thư mục essays)
+                    if category == "essays":
+                        score_file_path = os.path.join(course_path, "scores", f"{basename}.score")
+                        if os.path.exists(score_file_path):
+                            try:
+                                with open(score_file_path, "r", encoding="utf-8") as f:
+                                    metadata["sample_score"] = float(f.read().strip())
+                            except (IOError, ValueError):
+                                print(f"Không thể đọc điểm từ file: {score_file_path}")
+
+                    metadatas.append(metadata)
     
     if docs:
         embeddings = embedding_model.encode(docs).tolist()
@@ -189,38 +211,81 @@ def save_result_to_excel(course, filename, essay_text, score, file_path="grading
     ws.append([course, filename, essay_preview, score])
     wb.save(file_path)
 
-def find_relevant_docs(query):
+def find_relevant_docs(query, course_context):
     query_embedding = embedding_model.encode([query]).tolist()
-    results = collection.query(query_embeddings=query_embedding, n_results=1)
-    return results['documents'][0][0] if results['documents'] else ""
+    
+    # Thêm bộ lọc metadata vào truy vấn
+    results = collection.query(
+        query_embeddings=query_embedding,
+        n_results=1,
+        include=['metadatas', 'documents'],
+        where={"course": course_context}
+    )
+    
+    if results['documents'] and results['metadatas']:
+        # Lấy tài liệu và metadata của tài liệu liên quan nhất
+        relevant_doc = results['documents'][0][0]
+        metadata = results['metadatas'][0][0]
+        
+        # Lấy điểm mẫu từ metadata (nếu có)
+        sample_score = metadata.get("sample_score", None)
+        
+        return relevant_doc, sample_score
+    return "", None
 
-def grade_essay(essay_text, course_context, student_context, sample_text):
-    model = genai.GenerativeModel("gemini-1.5-flash")
+def grade_essay(essay_text, course_context, student_context, sample_text, sample_score):
+    temperature_value = 0.4
+    model = genai.GenerativeModel("gemini-2.5-flash")
+    
+    # Thêm thông tin điểm mẫu vào prompt
+    sample_score_info = ""
+    if sample_score is not None:
+        sample_score_info = f"Bài luận mẫu này có điểm thực tế là: {sample_score} điểm. Hãy so sánh và giải thích lý do tại sao bài làm của sinh viên có thể cao hơn hoặc thấp hơn điểm này."
+    else:
+        sample_score_info = "Không có điểm mẫu tham chiếu."
+
     prompt = f"""
-Bạn là giảng viên đại học. Hãy chấm bài luận của sinh viên theo thang điểm 10.
+Bạn là một tiến sĩ đại học có nhiều năm kinh nghiệm trong lĩnh vực Công nghệ thông tin. Bạn cực kỳ nghiêm khắc và chuyên nghiệp trong việc chấm điểm, luôn đưa ra phản hồi chi tiết, khách quan và có tính xây dựng.
 
-Hãy chấm điểm bài luận dưới đây dựa trên bộ tiêu chí sau: {rubric}
-Yêu cầu:
-1. Chấm từng tiêu chí kèm điểm số.
-2. Tính tổng điểm cuối cùng.
-3. Đưa ra nhận xét chi tiết, chỉ ra điểm mạnh và điểm cần cải thiện.
+Hãy phân tích và chấm điểm bài luận của sinh viên dưới đây dựa trên bộ tiêu chí chi tiết mà tôi cung cấp. Bài luận này thuộc môn học {course_context}.
 
-Ngữ cảnh môn học: {course_context}
-Ngữ cảnh sinh viên: {student_context}
-Bài mẫu tham chiếu: {sample_text}
-Bài luận cần chấm: {essay_text}
+Bộ tiêu chí chấm điểm:
+{rubric}
 
-Trả về:
-- Điểm tổng (0-10)
-- Nhận xét chi tiết
+Yêu cầu cụ thể:
+1.  Chấm điểm từng tiêu chí: Phân tích kỹ lưỡng và đưa ra điểm số cụ thể (có thể là số thập phân) cho từng tiêu chí trong bộ rubric. Sử dụng thang điểm từ 0 đến 10 một cách linh hoạt, không giới hạn điểm trong một khoảng hẹp.
+2.  So sánh với bài mẫu: Đối chiếu bài làm của sinh viên với bài luận mẫu {sample_text} được cung cấp. Nhấn mạnh những điểm mà sinh viên đã làm tốt hơn hoặc chưa bằng bài mẫu.
+3.  Nhận xét chi tiết:
+        Điểm mạnh: Nêu rõ những mặt tích cực mà sinh viên đã làm được, ví dụ: "Kiến thức chính xác và lập luận chặt chẽ."
+        Điểm cần cải thiện: Đề xuất những điểm mà sinh viên có thể cải thiện trong bài viết tiếp theo để đạt điểm cao hơn.
+4.  Tính tổng điểm cuối cùng: Tổng hợp điểm từ các tiêu chí và đưa ra tổng điểm cuối cùng trên thang điểm 10.
+5.  Thể hiện ngữ cảnh sinh viên: Dựa vào mô tả {student_context}, hãy điều chỉnh mức độ nghiêm khắc khi chấm điểm. Ví dụ, với sinh viên năm nhất, tập trung vào cấu trúc cơ bản; với sinh viên năm 4, yêu cầu cao hơn về mặt học thuật và phân tích.
+
+Thông tin tham chiếu:
+-   Điểm mẫu để tham khảo: {sample_score_info}
+-   Bài luận mẫu cùng môn học: {sample_text}
+-   Bài luận cần chấm: {essay_text}
+
+Định dạng đầu ra:
+Hãy trả về kết quả theo cấu trúc sau, đảm bảo mọi thông tin đều được trình bày rõ ràng và dễ đọc.
+-   Điểm tổng: [Điểm số linh hoạt từ 0-10]
+-   Điểm mạnh: [Đưa ra ít nhất 3 điểm mạnh nổi bật]
+-   Điểm cần cải thiện: [Đưa ra ít nhất 3 điểm cần cải thiện cụ thể]
+-   Nhận xét: [Phản hồi chi tiết theo yêu cầu trên]
 """
-    response = model.generate_content(prompt)
-    return response.text
+    try:
+        response = model.generate_content(
+            prompt,
+            generation_config={"temperature": temperature_value}
+        )
+        return response.text
+    except Exception as e:
+        return f"Đã xảy ra lỗi khi chấm điểm: {e}"
 
 def extract_score(result_text: str) -> str:
     score_value = "?"
     for line in result_text.splitlines():
-        if any(kw in line for kw in ["Điểm tổng", "Tổng điểm", "Điểm cuối cùng"]):
+        if any(kw in line for kw in ["Điểm tổng", "Tổng điểm", "Điểm cuối cùng", "Tổng điểm cuối cùng"]):
             match = re.search(r"(\d+(\.\d+)?)", line)
             if match:
                 score_value = match.group(1)
@@ -274,35 +339,68 @@ col1, col2 = st.columns([1, 2])
 with col1:
     st.header("📂 Nhập dữ liệu")
     uploaded_file = st.file_uploader("Tải lên bài luận (.pdf, .docx, .txt)", type=["pdf", "docx", "txt"])
-    course_context = st.selectbox("📘 Môn học", ["Marketing kỹ thuật số", "Phát triển ứng dụng thương mại điện tử", "Quản trị dự án thương mại điện tử", "Thương mại điện tử"])
+    course_context = st.selectbox("📘 Môn học", ["Chiến lược kinh doanh thương mại điện tử", "Hệ thống thanh toán điện tử", "Marketing kỹ thuật số", "Phát triển ứng dụng thương mại điện tử", "Quản trị dự án thương mại điện tử", "Thương mại điện tử"])
     student_context = st.selectbox("🎓 Ngữ cảnh sinh viên", [
-        "Năm 1: Sinh viên chỉ mới làm quen viết luận. Đánh giá chủ yếu ở sự rõ ràng, logic cơ bản, cách trình bày ý tưởng. Không yêu cầu nhiều về trích dẫn học thuật hay cấu trúc phức tạp.", 
-        "Năm 2: Sinh viên bắt đầu học kỹ năng viết nâng cao hơn. Cần có cấu trúc 3 phần (mở bài, thân bài, kết luận), biết triển khai luận điểm theo đoạn văn mạch lạc, có ví dụ minh họa cơ bản.", 
+        "Năm 4: Sinh viên cần đạt chuẩn luận văn tốt nghiệp: viết học thuật hoàn chỉnh, có đặt vấn đề, cơ sở lý thuyết, phương pháp, phân tích, kết quả, kết luận, sử dụng trích dẫn chuẩn, thể hiện tư duy nghiên cứu độc lập và đóng góp mới.", 
         "Năm 3: Sinh viên phải thể hiện lập luận chặt chẽ hơn, biết sử dụng tài liệu tham khảo (trích dẫn đúng cách), trình bày theo chuẩn học thuật, có phân tích, so sánh, đánh giá thay vì chỉ mô tả.", 
-        "Năm 4: Sinh viên cần đạt chuẩn luận văn tốt nghiệp: viết học thuật hoàn chỉnh, có đặt vấn đề, cơ sở lý thuyết, phương pháp, phân tích, kết quả, kết luận, sử dụng trích dẫn chuẩn, thể hiện tư duy nghiên cứu độc lập và đóng góp mới."
+        "Năm 2: Sinh viên bắt đầu học kỹ năng viết nâng cao hơn. Cần có cấu trúc 3 phần (mở bài, thân bài, kết luận), biết triển khai luận điểm theo đoạn văn mạch lạc, có ví dụ minh họa cơ bản.", 
+        "Năm 1: Sinh viên chỉ mới làm quen viết luận. Đánh giá chủ yếu ở sự rõ ràng, logic cơ bản, cách trình bày ý tưởng. Không yêu cầu nhiều về trích dẫn học thuật hay cấu trúc phức tạp."
     ])
 
+    # Trong phần xử lý nút bấm
     if st.button("🚀 Chấm điểm", use_container_width=True):
         if uploaded_file is not None:
             with st.status("🚀 Đang chấm điểm...", expanded=True) as status_box:
                 status_box.write("Đang đọc nội dung file...")
                 essay_text = read_file(uploaded_file)
+                
                 if not essay_text.strip():
                     status_box.update(label="❌ Lỗi: Không đọc được nội dung từ file.", state="error", expanded=False)
                     st.error("❌ Không đọc được nội dung từ file.")
                 else:
                     status_box.write("Đang tìm tài liệu tham khảo...")
-                    sample_text = find_relevant_docs(essay_text)
-                    status_box.write("Đang phân tích bài luận với mô hình AI...")
-                    result = grade_essay(essay_text, course_context, student_context, sample_text)
-                    st.session_state["grading_result"] = result
                     
-                    score_value = extract_score(result)
+                    # Gọi hàm find_relevant_docs và nhận cả 2 giá trị
+                    sample_text, sample_score = find_relevant_docs(essay_text, course_context)
 
-                    status_box.write(f"✅ Đã hoàn tất! Kết quả: {score_value} điểm.")
-                    status_box.update(label="✅ Đã chấm điểm xong!", state="complete", expanded=False)
-                    save_result_to_excel(course_context, uploaded_file.name, essay_text, score_value)
-                    st.success(f"✅ Kết quả đã được lưu vào grading_results.xlsx (Điểm: {score_value})")
+                    if not sample_text:
+                        status_box.update(label="⚠️ Không tìm thấy bài mẫu nào cho môn học này.", state="warning", expanded=False)
+                        st.warning(f"Không tìm thấy bài luận mẫu nào trong cơ sở dữ liệu cho môn học: {course_context}. Kết quả chấm điểm có thể không chính xác.")
+                        
+                        # Vẫn tiếp tục chấm điểm nhưng không có ngữ cảnh bài mẫu và điểm
+                        result = grade_essay(
+                            essay_text=essay_text, 
+                            course_context=course_context, 
+                            student_context=student_context, 
+                            sample_text="Không có bài mẫu tham chiếu.", 
+                            sample_score=None # Gửi None nếu không tìm thấy điểm
+                        )
+                        st.session_state["grading_result"] = result
+                        score_value = extract_score(result)
+                        
+                        status_box.update(label=f"✅ Đã hoàn tất! Kết quả: {score_value} điểm.", state="complete", expanded=False)
+                        save_result_to_excel(course_context, uploaded_file.name, essay_text, score_value)
+                        st.success(f"✅ Kết quả đã được lưu vào grading_results.xlsx (Điểm AI: {score_value})")
+                    else:
+                        status_box.write("Đang phân tích bài luận với mô hình AI...")
+                        
+                        # Gọi hàm chấm điểm với tham số điểm mẫu
+                        result = grade_essay(
+                            essay_text=essay_text, 
+                            course_context=course_context, 
+                            student_context=student_context, 
+                            sample_text=sample_text,
+                            sample_score=sample_score
+                        )
+                        st.session_state["grading_result"] = result
+                        
+                        score_value = extract_score(result)
+
+                        status_box.write(f"✅ Đã hoàn tất! Kết quả: {score_value} điểm.")
+                        status_box.update(label="✅ Đã chấm điểm xong!", state="complete", expanded=False)
+                        
+                        save_result_to_excel(course_context, uploaded_file.name, essay_text, score_value)
+                        st.success(f"✅ Kết quả đã được lưu vào grading_results.xlsx (Điểm AI: {score_value})")
         else:
             st.warning("⚠️ Vui lòng tải lên bài luận trước.")
 
