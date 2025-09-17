@@ -1,5 +1,6 @@
 streamlit
 pdfplumber
+pymupdf
 python-docx
 google-generativeai
 sentence-transformers
