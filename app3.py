@@ -16,8 +16,8 @@ import csv
 
 # Dùng st.secrets để quản lý khóa API một cách an toàn hơn
 # st.secrets['GEMINI_API_KEY']
-GEMINI_API_KEY = "AIzaSyCSenmJGRf2VJ9WId1SwQpfL3dMRRaHWmw"
-# GEMINI_API_KEY = "AIzaSyABwa4KRue_M2A7l2YHAN4J2tPQJ5s33Ig"
+# GEMINI_API_KEY = "AIzaSyCSenmJGRf2VJ9WId1SwQpfL3dMRRaHWmw"
+GEMINI_API_KEY = "AIzaSyABwa4KRue_M2A7l2YHAN4J2tPQJ5s33Ig"
 # GEMINI_API_KEY = "AIzaSyBGSw2-NoZXd3HT_jWK1HoNzX7WhHcaBNA"
 genai.configure(api_key=GEMINI_API_KEY)
 
@@ -234,8 +234,8 @@ def find_relevant_docs(query, course_context):
     return "", None
 
 def grade_essay(essay_text, course_context, student_context, sample_text, sample_score):
-    temperature_value = 0.4
-    model = genai.GenerativeModel("gemini-2.5-flash")
+    temperature_value = 0.5
+    model = genai.GenerativeModel("gemini-2.0-flash")
     
     # Thêm thông tin điểm mẫu vào prompt
     sample_score_info = ""

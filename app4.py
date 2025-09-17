@@ -235,8 +235,8 @@ def find_relevant_docs(query, course_context):
     return "", None
 
 def grade_essay(essay_text, course_context, student_context, sample_text, sample_score):
-    temperature_value = 0.4
-    model = genai.GenerativeModel("gemini-2.5-flash")
+    temperature_value = 0.5
+    model = genai.GenerativeModel("gemini-2.0-flash")
     
     # Thêm thông tin điểm mẫu vào prompt
     sample_score_info = ""

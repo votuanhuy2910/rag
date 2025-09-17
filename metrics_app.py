@@ -5,7 +5,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import numpy as np
 
 # Thay đổi tên file Excel của bạn tại đây
-file_path = 'metrics_grading_results.xlsx'
+file_path = 'grading_results_metrics.xlsx'
 
 try:
     # Đọc dữ liệu từ file Excel
