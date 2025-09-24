@@ -43,13 +43,10 @@ pearson_RAG, _ = pearsonr(df["diem_thuc_te"], df["diem_mo_hinh_rag"])
 # === In kết quả ===
 print("=== Kết quả so sánh ===")
 print("=== Đánh giá độ chính xác & tương đồng ===")
-print(f"Accuracy (No RAG): {acc_noRAG:.3f} | Accuracy (RAG): {acc_RAG:.3f}")
 print(f"MAE (No RAG): {mae_noRAG:.3f} | MAE (RAG): {mae_RAG:.3f}") # Nếu MAE/RMSE của RAG thấp hơn → RAG tốt hơn.
 print(f"MSE (No RAG): {mse_noRAG:.3f} | MSE (RAG): {mse_RAG:.3f}") # Nếu MSE của RAG thấp hơn → RAG tốt hơn.
 print(f"RMSE (No RAG): {rmse_noRAG:.3f} | RMSE (RAG): {rmse_RAG:.3f}") # Nếu MAE/RMSE của RAG thấp hơn → RAG tốt hơn.
-print(f"R² (No RAG): {r2_noRAG:.3f} | R² (RAG): {r2_RAG:.3f}") # Nếu R² của RAG cao hơn → RAG tốt hơn.
 print(f"QWK (No RAG): {qwk_noRAG:.3f} | QWK (RAG): {qwk_RAG:.3f}") # QWK: giá trị từ -1 đến 1, càng gần 1 càng tốt
-print(f"Pearson Corr (No RAG): {pearson_noRAG:.3f} | Pearson Corr (RAG): {pearson_RAG:.3f}")
 
 # === Bar Chart: so sánh metrics ===
 # Tạo DataFrame chỉ gồm Accuracy (%) và QWK

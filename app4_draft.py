@@ -102,7 +102,7 @@ def export_collection_to_csv(collection, file_path="essays_backup.csv"):
 def split_essay_structure(text):
     words = text.split()
     n = len(words)
-    if n < 100:  # nếu bài quá ngắn thì coi như 1 đoạn
+    if n < 100:
         return {"full": text}
 
     start = int(n * 0.15)
@@ -218,7 +218,7 @@ def read_file(file):
         st.error(f"❌ Lỗi khi đọc file: {e}")
         return ""
 
-def save_result_to_excel(course, filename, essay_text, model_name, score, file_path="grading_results.xlsx"):
+def save_result_to_excel(course, filename, essay_text, model_name, score, file_path="grading_results_rag.xlsx"):
     from openpyxl import Workbook, load_workbook
     
     essay_preview = essay_text[:300] + ("..." if len(essay_text) > 300 else "")
@@ -412,7 +412,7 @@ with col1:
                         
                         status_box.update(label=f"✅ Đã hoàn tất! Kết quả: {score_value} điểm.", state="complete", expanded=False)
                         save_result_to_excel(course_context, uploaded_file.name, essay_text, model_name, score_value)
-                        st.success(f"✅ Kết quả đã được lưu vào grading_results.xlsx (Điểm AI: {score_value})")
+                        st.success(f"✅ Kết quả đã được lưu vào grading_results_rag.xlsx (Điểm AI: {score_value})")
                     else:
                         status_box.write("Đang phân tích bài luận với mô hình AI...")
                         
@@ -433,7 +433,7 @@ with col1:
                         status_box.update(label="✅ Đã chấm điểm xong!", state="complete", expanded=False)
                         
                         save_result_to_excel(course_context, uploaded_file.name, essay_text, model_name, score_value)
-                        st.success(f"✅ Kết quả đã được lưu vào grading_results.xlsx (Điểm AI: {score_value})")
+                        st.success(f"✅ Kết quả đã được lưu vào grading_results_rag.xlsx (Điểm AI: {score_value})")
         else:
             st.warning("⚠️ Vui lòng tải lên bài luận trước.")
 

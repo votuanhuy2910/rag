@@ -28,7 +28,8 @@ def evaluate_essay_scoring(y_true, y_pred):
         "QWK": qwk
     }
     return evaluation_metrics
-        
+
+
 def plot_evaluation_charts_separate(y_true, y_pred, metrics):
     """
     Vẽ các biểu đồ để trực quan hóa kết quả đánh giá mô hình, mỗi biểu đồ
@@ -40,7 +41,7 @@ def plot_evaluation_charts_separate(y_true, y_pred, metrics):
     metric_values = [metrics[name] for name in metric_names]
     
     ax = sns.barplot(x=metric_names, y=metric_values, palette='viridis')
-    plt.title('Các chỉ số đánh giá hiệu suất mô hình tập Train')
+    plt.title('Các chỉ số đánh giá hiệu suất mô hình tập Test')
     plt.ylabel('Giá trị')
     plt.xlabel('Chỉ số')
     plt.xticks(rotation=30)
@@ -54,7 +55,7 @@ def plot_evaluation_charts_separate(y_true, y_pred, metrics):
     # --- Biểu đồ 2: Biểu đồ phân tán (Scatter Plot) ---
     plt.figure(figsize=(10, 7))
     sns.scatterplot(x=y_true, y=y_pred)
-    plt.title('Biểu đồ phân tán: Điểm thực tế vs Điểm dự đoán tập Train')
+    plt.title('Biểu đồ phân tán: Điểm thực tế vs Điểm dự đoán tập Test')
     plt.xlabel('Điểm thực tế')
     plt.ylabel('Điểm dự đoán')
     plt.grid(True, linestyle='--', alpha=0.6)
@@ -69,7 +70,7 @@ def plot_evaluation_charts_separate(y_true, y_pred, metrics):
     plt.figure(figsize=(10, 7))
     sns.kdeplot(x=y_true, label='Điểm thực tế', color='blue', fill=True, alpha=0.5)
     sns.kdeplot(x=y_pred, label='Điểm mô hình', color='red', fill=True, alpha=0.5)
-    plt.title('Phân bố điểm số tập Train')
+    plt.title('Phân bố điểm số tập Test')
     plt.xlabel('Điểm số')
     plt.ylabel('Mật độ')
     plt.legend()
@@ -88,11 +89,11 @@ def plot_evaluation_charts_separate(y_true, y_pred, metrics):
     # plt.show()
 
 # --- Phần chính: Đọc dữ liệu từ file và gọi hàm đánh giá ---
-file_path = 'grading_results_rag_metrics.xlsx'
+file_path = 'grading_results_rag_test_metrics.xlsx'
 
 try:
     df = pd.read_excel(file_path)
-    scores_predicted = df['diem_mo_hinh_rag'].values
+    scores_predicted = df['diem_mo_hinh_rag_test'].values
     scores_actual = df['diem_thuc_te'].values
 
     if len(scores_predicted) == 0 or len(scores_actual) == 0:
@@ -100,7 +101,7 @@ try:
     else:
         metrics = evaluate_essay_scoring(scores_actual, scores_predicted)
         
-        print("--- Kết quả đánh giá mô hình tập Train ---")
+        print("--- Kết quả đánh giá mô hình tập Test ---")
         for metric_name, value in metrics.items():
             print(f"{metric_name}: {value:.4f}")
 
@@ -110,6 +111,6 @@ try:
 except FileNotFoundError:
     print(f"Lỗi: Không tìm thấy file tại đường dẫn: {file_path}")
 except KeyError as e:
-    print(f"Lỗi: Không tìm thấy tên cột {e} trong file CSV. Vui lòng kiểm tra lại tên cột 'diem_mo_hinh_rag' và 'diem_thuc_te'.")
+    print(f"Lỗi: Không tìm thấy tên cột {e} trong file CSV. Vui lòng kiểm tra lại tên cột 'diem_mo_hinh_rag_test' và 'diem_thuc_te'.")
 except Exception as e:
     print(f"Có lỗi xảy ra: {e}")
