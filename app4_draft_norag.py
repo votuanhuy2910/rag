@@ -115,7 +115,7 @@ def grade_essay(essay_text, course_context, student_context, model_name="gemini-
     """
     Sử dụng LLM để chấm điểm bài luận có thêm ngữ cảnh.
     """
-    temperature_value = 0.5
+    temperature_value = 0.7
     model = genai.GenerativeModel(model_name)
     
     # Prompt mới, được thêm ngữ cảnh từ người dùng
