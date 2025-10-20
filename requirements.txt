@@ -6,3 +6,8 @@ google-generativeai
 sentence-transformers
 chromadb
 openpyxl
+pandas
+numpy
+matplotlib
+seaborn
+scikit-learn

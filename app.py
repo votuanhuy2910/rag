@@ -99,6 +99,21 @@ def export_collection_to_csv(collection, file_path="essays_backup.csv"):
                 metadata.get("basename", "")
             ])
 
+def split_essay_structure(text):
+    words = text.split()
+    n = len(words)
+    if n < 100:
+        return {"full": text}
+
+    start = int(n * 0.15)
+    end = int(n * 0.85)
+
+    return {
+        "mo_bai": " ".join(words[:start]),
+        "than_bai": " ".join(words[start:end]),
+        "ket_bai": " ".join(words[end:])
+    }
+
 # Sửa đổi hàm load_sample_data
 def load_sample_data():
     base_folder = "data"
@@ -138,27 +153,34 @@ def load_sample_data():
 
                 if text.strip():
                     basename = os.path.splitext(filename)[0]
-                    docs.append(text)
-                    doc_id = f"{course}_{category}_{basename}"
-                    ids.append(doc_id)
-                    
-                    metadata = {
-                        "course": course,
-                        "category": category,
-                        "filename": filename,
-                        "basename": basename
-                    }
-
                     if category == "essays":
-                        score_file_path = os.path.join(course_path, "scores", f"{basename}.score")
-                        if os.path.exists(score_file_path):
-                            try:
-                                with open(score_file_path, "r", encoding="utf-8") as f:
-                                    metadata["sample_score"] = float(f.read().strip())
-                            except (IOError, ValueError):
-                                print(f"Không thể đọc điểm từ file: {score_file_path}")
+                        parts = split_essay_structure(text)
+                        for section, section_text in parts.items():
+                            if section_text.strip():
+                                doc_id = f"{course}_{category}_{basename}_{section}"
+                                docs.append(section_text)
+                                ids.append(doc_id)
+                                metadata = {
+                                    "course": course,
+                                    "category": category,
+                                    "filename": filename,
+                                    "basename": basename,
+                                    "section": section   # thêm thông tin mở/thân/kết
+                                }
+                                metadatas.append(metadata)
+                    else:
+                        # giữ nguyên như cũ cho teaching_materials, scores
+                        docs.append(text)
+                        doc_id = f"{course}_{category}_{basename}"
+                        ids.append(doc_id)
+                        metadata = {
+                            "course": course,
+                            "category": category,
+                            "filename": filename,
+                            "basename": basename
+                        }
+                        metadatas.append(metadata)
 
-                    metadatas.append(metadata)
     
     if docs:
         embeddings = embedding_model.encode(docs).tolist()
@@ -196,7 +218,7 @@ def read_file(file):
         st.error(f"❌ Lỗi khi đọc file: {e}")
         return ""
 
-def save_result_to_excel(course, filename, essay_text, score, file_path="grading_results.xlsx"):
+def save_result_to_excel(course, filename, essay_text, model_name, score, file_path="grading_results.xlsx"):
     from openpyxl import Workbook, load_workbook
     
     essay_preview = essay_text[:300] + ("..." if len(essay_text) > 300 else "")
@@ -207,9 +229,9 @@ def save_result_to_excel(course, filename, essay_text, score, file_path="grading
     else:
         wb = Workbook()
         ws = wb.active
-        ws.append(["Tên môn học", "Tên file", "Nội dung bài luận", "Điểm"])
+        ws.append(["Tên môn học", "Tên file", "Nội dung bài luận", "Mô hình", "Điểm RAG"])
 
-    ws.append([course, filename, essay_preview, score])
+    ws.append([course, filename, essay_preview, model_name, score])
     wb.save(file_path)
 
 def find_relevant_docs(query, course_context):
@@ -234,9 +256,9 @@ def find_relevant_docs(query, course_context):
         return relevant_doc, sample_score
     return "", None
 
-def grade_essay(essay_text, course_context, student_context, sample_text, sample_score):
+def grade_essay(essay_parts, course_context, student_context, sample_text, sample_score, model_name = "gemini-2.0-flash"):
     temperature_value = 0.5
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    model = genai.GenerativeModel(model_name)
     
     # Thêm thông tin điểm mẫu vào prompt
     sample_score_info = ""
@@ -255,6 +277,12 @@ Bộ tiêu chí chấm điểm:
 
 Yêu cầu cụ thể:
 1.  Chấm điểm từng tiêu chí: Phân tích kỹ lưỡng và đưa ra điểm số cụ thể (có thể là số thập phân) cho từng tiêu chí trong bộ rubric. Sử dụng thang điểm từ 0 đến 10 một cách linh hoạt, không giới hạn điểm trong một khoảng hẹp.
+    - Mở bài ({essay_parts.get("mo_bai", "")})
+    - Thân bài ({essay_parts.get("than_bai", "")})
+    - Kết bài ({essay_parts.get("ket_bai", "")})
+
+    Với mỗi phần:
+    - Phân tích chi tiết điểm mạnh và điểm yếu.
 2.  So sánh với bài mẫu: Đối chiếu bài làm của sinh viên với bài luận mẫu {sample_text} được cung cấp. Nhấn mạnh những điểm mà sinh viên đã làm tốt hơn hoặc chưa bằng bài mẫu.
 3.  Nhận xét chi tiết:
         Điểm mạnh: Nêu rõ những mặt tích cực mà sinh viên đã làm được, ví dụ: "Kiến thức chính xác và lập luận chặt chẽ."
@@ -265,7 +293,6 @@ Yêu cầu cụ thể:
 Thông tin tham chiếu:
 -   Điểm mẫu để tham khảo: {sample_score_info}
 -   Bài luận mẫu cùng môn học: {sample_text}
--   Bài luận cần chấm: {essay_text}
 
 Định dạng đầu ra:
 Hãy trả về kết quả theo cấu trúc sau, đảm bảo mọi thông tin đều được trình bày rõ ràng và dễ đọc.
@@ -335,6 +362,8 @@ st.markdown("""
 
 st.title("📄 Hệ thống chấm điểm bài luận tự động")
 
+model_name = "gemini-2.0-flash"
+
 col1, col2 = st.columns([1, 2])
 
 with col1:
@@ -354,6 +383,7 @@ with col1:
             with st.status("🚀 Đang chấm điểm...", expanded=True) as status_box:
                 status_box.write("Đang đọc nội dung file...")
                 essay_text = read_file(uploaded_file)
+                essay_parts = split_essay_structure(essay_text)
                 
                 if not essay_text.strip():
                     status_box.update(label="❌ Lỗi: Không đọc được nội dung từ file.", state="error", expanded=False)
@@ -370,28 +400,30 @@ with col1:
                         
                         # Vẫn tiếp tục chấm điểm nhưng không có ngữ cảnh bài mẫu và điểm
                         result = grade_essay(
-                            essay_text=essay_text, 
+                            essay_parts=essay_parts, 
                             course_context=course_context, 
                             student_context=student_context, 
                             sample_text="Không có bài mẫu tham chiếu.", 
-                            sample_score=None # Gửi None nếu không tìm thấy điểm
+                            sample_score=None, # Gửi None nếu không tìm thấy điểm
+                            model_name=model_name # Thêm tham số model_name vào đây
                         )
                         st.session_state["grading_result"] = result
                         score_value = extract_score(result)
                         
                         status_box.update(label=f"✅ Đã hoàn tất! Kết quả: {score_value} điểm.", state="complete", expanded=False)
-                        save_result_to_excel(course_context, uploaded_file.name, essay_text, score_value)
-                        st.success(f"✅ Kết quả đã được lưu vào grading_results.xlsx (Điểm AI: {score_value})")
+                        save_result_to_excel(course_context, uploaded_file.name, essay_text, model_name, score_value)
+                        st.success(f"✅ Kết quả đã được lưu vào grading_results_rag.xlsx (Điểm AI: {score_value})")
                     else:
                         status_box.write("Đang phân tích bài luận với mô hình AI...")
                         
                         # Gọi hàm chấm điểm với tham số điểm mẫu
                         result = grade_essay(
-                            essay_text=essay_text, 
+                            essay_parts=essay_parts, 
                             course_context=course_context, 
                             student_context=student_context, 
                             sample_text=sample_text,
-                            sample_score=sample_score
+                            sample_score=sample_score,
+                            model_name=model_name # Thêm tham số model_name vào đây
                         )
                         st.session_state["grading_result"] = result
                         
@@ -400,8 +432,8 @@ with col1:
                         status_box.write(f"✅ Đã hoàn tất! Kết quả: {score_value} điểm.")
                         status_box.update(label="✅ Đã chấm điểm xong!", state="complete", expanded=False)
                         
-                        save_result_to_excel(course_context, uploaded_file.name, essay_text, score_value)
-                        st.success(f"✅ Kết quả đã được lưu vào grading_results.xlsx (Điểm AI: {score_value})")
+                        save_result_to_excel(course_context, uploaded_file.name, essay_text, model_name, score_value)
+                        st.success(f"✅ Kết quả đã được lưu vào grading_results_rag.xlsx (Điểm AI: {score_value})")
         else:
             st.warning("⚠️ Vui lòng tải lên bài luận trước.")
 
